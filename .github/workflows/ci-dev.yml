@@ -5,6 +5,9 @@ on:
 
 jobs:
   docker:
+    # This workflow publishes to the upstream Docker Hub namespace and relies
+    # on secrets that are intentionally unavailable in forks.
+    if: github.repository == 'vsys-host/shkeeper.io'
     runs-on: ubuntu-latest
     steps:
       -
