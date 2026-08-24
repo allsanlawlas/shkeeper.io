@@ -38,6 +38,14 @@ from shkeeper.wallet_encryption import (
 from shkeeper.exceptions import NotRelatedToAnyInvoice
 from shkeeper.services.crypto_cache import get_available_cryptos
 from shkeeper.services.balance_service import get_balances
+from shkeeper.services.webhook_secret import (
+    MAX_WEBHOOK_SECRET_LENGTH,
+    MIN_WEBHOOK_SECRET_LENGTH,
+    clear_configured_webhook_secret,
+    generate_webhook_secret,
+    get_configured_webhook_secret,
+    set_configured_webhook_secret,
+)
 from functools import wraps
 from shkeeper.api.schemas.api_docs import (
     crypto_list_doc, crypto_balances_doc, payment_request_doc, quote_doc, 
@@ -237,6 +245,100 @@ def payment_gateway_set_token(crypto_name):
         crypto.wallet.apikey = req["token"]
     db.session.commit()
     return {"status": "success"}
+
+
+@blp_v1.get("/<string:crypto_name>/payment-gateway/webhook-secret")
+@login_required
+def payment_gateway_get_webhook_secret(crypto_name):
+    """Return webhook-secret status without exposing the stored secret."""
+    Crypto.instances[crypto_name]  # Validate that the requested wallet exists.
+    webhook_secret = get_configured_webhook_secret()
+    return {
+        "status": "success",
+        "configured": bool(webhook_secret),
+        "fallback": None if webhook_secret else "api_key",
+    }
+
+
+@blp_v1.post("/<string:crypto_name>/payment-gateway/webhook-secret")
+@login_required
+def payment_gateway_set_webhook_secret(crypto_name):
+    """Generate a candidate or activate the global webhook signing secret."""
+    Crypto.instances[crypto_name]  # Validate that the requested wallet exists.
+    if not request.is_json:
+        return {
+            "status": "error",
+            "message": "Content-Type must be application/json",
+        }, 415
+
+    req = request.get_json(silent=True)
+    if not isinstance(req, dict):
+        return {
+            "status": "error",
+            "message": "request body must be a JSON object",
+        }, 400
+
+    action = req.get("action")
+    if action == "generate":
+        response = jsonify(
+            {
+                "status": "success",
+                "configured": bool(get_configured_webhook_secret()),
+                "active": False,
+                "generated_secret": generate_webhook_secret(),
+            }
+        )
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        return response
+
+    if action != "set":
+        return {
+            "status": "error",
+            "message": "action must be either 'set' or 'generate'",
+        }, 400
+
+    webhook_secret = req.get("secret")
+    if not isinstance(webhook_secret, str):
+        return {
+            "status": "error",
+            "message": "secret must be a string",
+        }, 400
+
+    if not (
+        MIN_WEBHOOK_SECRET_LENGTH
+        <= len(webhook_secret)
+        <= MAX_WEBHOOK_SECRET_LENGTH
+    ):
+        return {
+            "status": "error",
+            "message": (
+                f"secret must be between {MIN_WEBHOOK_SECRET_LENGTH} and "
+                f"{MAX_WEBHOOK_SECRET_LENGTH} characters"
+            ),
+        }, 400
+
+    set_configured_webhook_secret(webhook_secret)
+    db.session.commit()
+    return {
+        "status": "success",
+        "configured": True,
+    }
+
+
+@blp_v1.delete("/<string:crypto_name>/payment-gateway/webhook-secret")
+@login_required
+def payment_gateway_delete_webhook_secret(crypto_name):
+    """Clear the dedicated secret and restore API-key signing fallback."""
+    Crypto.instances[crypto_name]  # Validate that the requested wallet exists.
+    clear_configured_webhook_secret()
+    db.session.commit()
+    return {
+        "status": "success",
+        "configured": False,
+        "fallback": "api_key",
+    }
+
 
 @blp_v1.get("/settings/<string:key>")
 @login_required

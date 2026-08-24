@@ -9,7 +9,8 @@ from flask import current_app as app
 
 from shkeeper.modules.classes.crypto import Crypto
 from shkeeper.models import *
-from shkeeper.services.webhook_hmac import compact_json_bytes, shkeeper_webhook_auth_headers
+from shkeeper.services.webhook_hmac import compact_json_bytes
+from shkeeper.services.webhook_secret import build_webhook_auth_headers
 from datetime import datetime, timedelta
 
 bp = Blueprint("callback", __name__)
@@ -39,18 +40,28 @@ def send_unconfirmed_notification(utx: UnconfirmedTransaction):
         "amount": format_decimal(utx.amount_crypto, precision=crypto.precision),
     }
 
-    app.logger.warning(
-        f"[{utx.crypto}/{utx.txid}] Posting {notification} to {invoice.callback_url} with api key [REDACTED]"
-    )
     body = compact_json_bytes(notification)
+    auth_headers = build_webhook_auth_headers(
+        apikey,
+        body,
+        include_legacy_api_key=True,
+    )
+    if auth_headers is None:
+        app.logger.error(
+            f"[{utx.crypto}/{utx.txid}] Webhook signing secret is unavailable"
+        )
+        return False
+    app.logger.warning(
+        f"[{utx.crypto}/{utx.txid}] Posting signed notification "
+        f"to {invoice.callback_url}"
+    )
     try:
         r = requests.post(
             invoice.callback_url,
             data=body,
             headers={
                 "Content-Type": "application/json",
-                "X-Shkeeper-Api-Key": apikey,
-                **shkeeper_webhook_auth_headers(apikey, body),
+                **auth_headers,
             },
             timeout=app.config.get("REQUESTS_NOTIFICATION_TIMEOUT"),
         )
@@ -120,19 +131,30 @@ def send_notification(tx):
         str(round(overpaid_fiat.normalize(), 2)) if overpaid_fiat > 0 else "0.00"
     )
 
-    apikey = Crypto.instances[tx.crypto].wallet.apikey
-    app.logger.warning(
-        f"[{tx.crypto}/{tx.txid}] Posting {json.dumps(notification)} to {tx.invoice.callback_url} with api key [REDACTED]"
-    )
+    wallet = Crypto.instances[tx.crypto].wallet
+    apikey = wallet.apikey
     body = compact_json_bytes(notification)
+    auth_headers = build_webhook_auth_headers(
+        apikey,
+        body,
+        include_legacy_api_key=True,
+    )
+    if auth_headers is None:
+        app.logger.error(
+            f"[{tx.crypto}/{tx.txid}] Webhook signing secret is unavailable"
+        )
+        return False
+    app.logger.warning(
+        f"[{tx.crypto}/{tx.txid}] Posting signed notification "
+        f"to {tx.invoice.callback_url}: {json.dumps(notification)}"
+    )
     try:
         r = requests.post(
             tx.invoice.callback_url,
             data=body,
             headers={
                 "Content-Type": "application/json",
-                "X-Shkeeper-Api-Key": apikey,
-                **shkeeper_webhook_auth_headers(apikey, body),
+                **auth_headers,
             },
             timeout=app.config.get("REQUESTS_NOTIFICATION_TIMEOUT"),
         )
@@ -302,7 +324,8 @@ def send_payout_notification(notif: Notification):
     }
 
     crypto = Crypto.instances.get(payout.crypto)
-    apikey = crypto.wallet.apikey if crypto and crypto.wallet else ""
+    wallet = crypto.wallet if crypto and crypto.wallet else None
+    apikey = wallet.apikey if wallet else None
 
     retries = getattr(notif, "retries", 0)
     wait = (retries + 1) ** 2
@@ -310,8 +333,16 @@ def send_payout_notification(notif: Notification):
 
     body = compact_json_bytes(payload)
     headers = {"Content-Type": "application/json"}
-    if apikey:
-        headers.update(shkeeper_webhook_auth_headers(apikey, body))
+    auth_headers = build_webhook_auth_headers(apikey, body)
+    if auth_headers is None:
+        notif.message = "Webhook signing secret is unavailable"
+        notif.retries = retries + 1
+        db.session.commit()
+        app.logger.error(
+            f"[PAYOUT {payout.id}] Webhook signing secret is unavailable"
+        )
+        return False
+    headers.update(auth_headers)
     try:
         r = requests.post(
             payout.callback_url,
