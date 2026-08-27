@@ -1,5 +1,7 @@
 namespace: shkeeper
 
+externalSecretManagement: true
+
 waitForDb:
   image: busybox@sha256:1cfa4e2b09e127b9c4ed43578d3f3c18e7d44ea47b9ea98475c0cbe9086525f8
 
@@ -22,7 +24,6 @@ btc:
 
 btc_fullnode:
   enabled: false
-  url: http://bitcoin-fullnode.shkeeper.svc.cluster.local:8332
 
 ltc:
   enabled: false
