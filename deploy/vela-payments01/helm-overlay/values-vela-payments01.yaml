@@ -1,7 +1,19 @@
 namespace: shkeeper
 
+waitForDb:
+  image: busybox@sha256:1cfa4e2b09e127b9c4ed43578d3f3c18e7d44ea47b9ea98475c0cbe9086525f8
+
+createDb:
+  image: mariadb@sha256:b516afae7c1b82e954bfefe011fc4df71d37f0ad0386bb4f5fe381c23b938984
+
+unified_btc_image: vsyshost/bitcoin-shkeeper@sha256:cb68fbb7bb7593e0f82f8e722ec7117eed950c07cbea8f046519672084caa820
+unified_evm_image: vsyshost/evm-shkeeper@sha256:6b3db2742d3dc5f75f41ee9ec26872f804e54113e1af609a8d22d7dc4d3f5dc2
+
+redis:
+  image: redis@sha256:e2debfb7956fa12c7ddc79d7e645c8cf26b30c99a6e9161ea9bf4171e1668a5f
+
 shkeeper:
-  image: ghcr.io/allsanlawlas/shkeeper@sha256:b968cdb81967248eacde675185d2f23a4557fb5ab8e4cebed3a051b3fe71ef93
+  image: ghcr.io/allsanlawlas/shkeeper@sha256:1e5926dcb2aa9d4f67c39eb79fec983bdec3780caee17fb883d9e3caa00d04f2
 
 btc:
   enabled: true
@@ -17,6 +29,9 @@ ltc:
 
 doge:
   enabled: false
+
+tron_shkeeper:
+  image: vsyshost/tron-shkeeper@sha256:09d8870d8dc6d942c826585bcee0761430b01a2a72c5c966eaa1244c228a9f97
 
 trx:
   enabled: false
@@ -63,6 +78,9 @@ polygon_usdc:
 polygon_fullnode:
   enabled: false
   mainnet: true
+
+solana_shkeeper:
+  image: vsyshost/solana-shkeeper@sha256:24e7aca9c7611b02eea59ede0810687770c3c4f76c7bd8ae6fc178c719b65953
 
 sol:
   enabled: false
