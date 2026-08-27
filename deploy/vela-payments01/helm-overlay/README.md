@@ -15,7 +15,7 @@ This directory contains the small, reproducible deployment overlay for the payme
 - `r27-drpc-secretref.patch`: replaces six EVM/Solana endpoint values with encrypted Kubernetes Secret references.
 - `r30c-chart-hardening.patch`: adds the TRON adapter egress label and replaces the upstream MariaDB plaintext password with `shkeeper-mariadb-root:password` Secret references.
 - `r39-external-secrets-and-bitcoin-route.patch`: suppresses chart-generated Secrets and routes the Bitcoin adapter to `shkeeper-bitcoin-fullnode:endpoint`.
-- `values-vela-payments01.yaml`: freezes the customer-payment asset matrix and internal provider routing without secret values.
+- `values-vela-payments01.yaml`: freezes the customer-payment asset matrix, internal provider routing, and balanced dRPC block-polling intervals without secret values.
 - `trongrid-mainnet-proxy.yaml`: the hardened two-replica ClusterIP proxy and three NetworkPolicies.
 - `bitcoin-core-mainnet.yaml`: the internal pruned Bitcoin Core Deployment, ClusterIP Service, 200 GiB PVC and NetworkPolicy.
 - `required-secrets.txt`: the exact twelve externally created Secret names and keys.
@@ -23,6 +23,8 @@ This directory contains the small, reproducible deployment overlay for the payme
 - `UPSTREAM_CHART_COMMIT`: the exact chart base required before applying patches.
 
 Kubernetes automatically replaces failed proxy pods through the two-replica Deployment and liveness probe. There is no custom watchdog, CronJob, RBAC controller, or PodDisruptionBudget.
+
+Normal payment detection polls Ethereum every 10 seconds and Polygon and Solana every 5 seconds. These settings are separate from the adapters' hourly balance-reconciliation safety task.
 
 The real provider Secrets, encrypted backup, gas funding, deployment, and mainnet acceptance tests remain separate later gates.
 

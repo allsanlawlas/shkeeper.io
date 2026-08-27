@@ -11,6 +11,14 @@ createDb:
 unified_btc_image: vsyshost/bitcoin-shkeeper@sha256:cb68fbb7bb7593e0f82f8e722ec7117eed950c07cbea8f046519672084caa820
 unified_evm_image: vsyshost/evm-shkeeper@sha256:6b3db2742d3dc5f75f41ee9ec26872f804e54113e1af609a8d22d7dc4d3f5dc2
 
+ethereum_shkeeper:
+  extraEnv:
+    CHECK_NEW_BLOCK_EVERY_SECONDS: "10"
+
+polygon_shkeeper:
+  extraEnv:
+    CHECK_NEW_BLOCK_EVERY_SECONDS: "5"
+
 redis:
   image: redis@sha256:e2debfb7956fa12c7ddc79d7e645c8cf26b30c99a6e9161ea9bf4171e1668a5f
 
@@ -82,6 +90,8 @@ polygon_fullnode:
 
 solana_shkeeper:
   image: vsyshost/solana-shkeeper@sha256:24e7aca9c7611b02eea59ede0810687770c3c4f76c7bd8ae6fc178c719b65953
+  extraEnv:
+    CHECK_NEW_BLOCK_EVERY_SECONDS: "5"
 
 sol:
   enabled: false
