@@ -1,0 +1,111 @@
+namespace: shkeeper
+
+shkeeper:
+  image: ghcr.io/allsanlawlas/shkeeper@sha256:b968cdb81967248eacde675185d2f23a4557fb5ab8e4cebed3a051b3fe71ef93
+
+btc:
+  enabled: true
+  mainnet: true
+  regtest: false
+
+btc_fullnode:
+  enabled: false
+  url: http://bitcoin-fullnode.shkeeper.svc.cluster.local:8332
+
+ltc:
+  enabled: false
+
+doge:
+  enabled: false
+
+trx:
+  enabled: false
+
+usdt:
+  enabled: true
+
+usdc:
+  enabled: false
+
+tron_fullnode:
+  enabled: false
+  mainnet: true
+  url: http://trongrid-mainnet-proxy.shkeeper-infra.svc.cluster.local:8080
+
+eth:
+  enabled: false
+
+eth_usdt:
+  enabled: true
+
+eth_usdc:
+  enabled: true
+
+eth_pyusd:
+  enabled: false
+
+eth_dai:
+  enabled: false
+
+eth_fullnode:
+  enabled: false
+  mainnet: true
+
+matic:
+  enabled: false
+
+polygon_usdt:
+  enabled: true
+
+polygon_usdc:
+  enabled: true
+
+polygon_fullnode:
+  enabled: false
+  mainnet: true
+
+sol:
+  enabled: false
+
+solana_usdt:
+  enabled: true
+
+solana_usdc:
+  enabled: true
+
+solana_pyusd:
+  enabled: false
+
+solana_fullnode:
+  enabled: false
+  mainnet: true
+
+firo:
+  enabled: false
+
+monero:
+  enabled: false
+
+bnb:
+  enabled: false
+
+xrp:
+  enabled: false
+
+avax:
+  enabled: false
+
+arbeth:
+  enabled: false
+
+opeth:
+  enabled: false
+
+ton:
+  enabled: false
+
+aml:
+  enabled: false
+
+btc_lightning:
+  enabled: false
