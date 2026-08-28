@@ -1,0 +1,305 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trongrid-watchdog-script
+  namespace: shkeeper-infra
+  labels:
+    app.kubernetes.io/name: trongrid-watchdog
+    app.kubernetes.io/part-of: shkeeper
+data:
+  watchdog.sh: |
+    #!/bin/sh
+    set -eu
+    umask 077
+
+    readonly namespace='shkeeper-infra'
+    readonly deployment='trongrid-mainnet-proxy'
+    readonly proxy_url='http://trongrid-mainnet-proxy.shkeeper-infra.svc.cluster.local:8080/wallet/getnodeinfo'
+    readonly direct_url='https://api.trongrid.io/wallet/getnodeinfo'
+    readonly api_url='https://kubernetes.default.svc/apis/apps/v1/namespaces/shkeeper-infra/deployments/trongrid-mainnet-proxy'
+    readonly ca_file='/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
+    readonly token_file='/var/run/secrets/kubernetes.io/serviceaccount/token'
+    readonly auth_header='/tmp/kubernetes-auth-header'
+    readonly deployment_json='/tmp/deployment.json'
+    readonly patch_json='/tmp/patch.json'
+    readonly api_response='/tmp/api-response.json'
+    readonly cooldown_seconds='900'
+
+    printf 'watchdog=trongrid-mainnet-proxy|timestamp_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    test -s "$ca_file"
+    test -s "$token_file"
+    printf 'Authorization: Bearer %s\n' "$(cat "$token_file")" > "$auth_header"
+    chmod 0600 "$auth_header"
+
+    api_get_status="$(
+      curl --silent --show-error --output "$deployment_json" --write-out '%{http_code}' \
+        --connect-timeout 2 --max-time 5 \
+        --cacert "$ca_file" --header "@$auth_header" "$api_url" || true
+    )"
+    if [ "$api_get_status" != '200' ]; then
+      printf 'decision=KUBERNETES_API_UNAVAILABLE|http_status=%s|action=NONE\n' "$api_get_status"
+      exit 1
+    fi
+
+    healthy='NO'
+    probe_number='1'
+    while [ "$probe_number" -le 3 ]; do
+      proxy_status="$(
+        curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+          --connect-timeout 2 --max-time 5 --request POST \
+          --header 'Content-Type: application/json' --data '{}' "$proxy_url" || true
+      )"
+      if [ "$proxy_status" = '200' ]; then
+        healthy='YES'
+        printf 'internal_proxy_probe=%s|http_status=200|result=HEALTHY\n' "$probe_number"
+        break
+      fi
+      printf 'internal_proxy_probe=%s|http_status=%s|result=FAILED\n' "$probe_number" "$proxy_status"
+      if [ "$probe_number" -lt 3 ]; then sleep 2; fi
+      probe_number="$((probe_number + 1))"
+    done
+
+    if [ "$healthy" = 'YES' ]; then
+      printf 'decision=PROXY_HEALTHY|action=NONE\n'
+      exit 0
+    fi
+
+    direct_status="$(
+      curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+        --connect-timeout 2 --max-time 5 --request POST \
+        --header 'Content-Type: application/json' --data '{}' "$direct_url" || true
+    )"
+
+    case "$direct_status" in
+      200)
+        printf 'direct_provider_http_status=200|result=HEALTHY\n'
+        ;;
+      401|403|429)
+        printf 'decision=DIRECT_PROVIDER_AUTH_OR_RATE_LIMIT|http_status=%s|action=NONE\n' "$direct_status"
+        exit 0
+        ;;
+      *)
+        printf 'decision=DIRECT_PROVIDER_OR_NETWORK_UNHEALTHY|http_status=%s|action=NONE\n' "$direct_status"
+        exit 0
+        ;;
+    esac
+
+    now_epoch="$(date -u +%s)"
+    last_restart_epoch="$(
+      sed -n 's|.*"vela.healthcare/trongrid-watchdog-last-restart-epoch":"\([0-9][0-9]*\)".*|\1|p' \
+        "$deployment_json" | head -n 1
+    )"
+    case "$last_restart_epoch" in
+      ''|*[!0-9]*) last_restart_epoch='0' ;;
+    esac
+
+    elapsed="$((now_epoch - last_restart_epoch))"
+    if [ "$last_restart_epoch" -gt 0 ] && [ "$elapsed" -lt "$cooldown_seconds" ]; then
+      printf 'decision=COOLDOWN_ACTIVE|elapsed_seconds=%s|cooldown_seconds=%s|action=NONE\n' \
+        "$elapsed" "$cooldown_seconds"
+      exit 0
+    fi
+
+    printf '%s' \
+      '{"spec":{"template":{"metadata":{"annotations":{' \
+      '"vela.healthcare/trongrid-watchdog-last-restart-epoch":"'"$now_epoch"'",' \
+      '"vela.healthcare/trongrid-watchdog-reason":"proxy-failed-provider-healthy"' \
+      '}}}}}' > "$patch_json"
+    chmod 0600 "$patch_json"
+
+    patch_status="$(
+      curl --silent --show-error --output "$api_response" --write-out '%{http_code}' \
+        --connect-timeout 2 --max-time 5 --request PATCH \
+        --cacert "$ca_file" --header "@$auth_header" \
+        --header 'Content-Type: application/merge-patch+json' \
+        --data-binary "@$patch_json" "$api_url" || true
+    )"
+    if [ "$patch_status" != '200' ]; then
+      printf 'decision=PROXY_FAILED_PROVIDER_HEALTHY|patch_http_status=%s|action=RESTART_FAILED\n' \
+        "$patch_status"
+      exit 1
+    fi
+
+    printf 'decision=PROXY_FAILED_PROVIDER_HEALTHY|action=RESTARTED_DEPLOYMENT_TRONGRID_MAINNET_PROXY\n'
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trongrid-watchdog
+  namespace: shkeeper-infra
+  labels:
+    app.kubernetes.io/name: trongrid-watchdog
+    app.kubernetes.io/part-of: shkeeper
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: trongrid-watchdog
+  namespace: shkeeper-infra
+  labels:
+    app.kubernetes.io/name: trongrid-watchdog
+    app.kubernetes.io/part-of: shkeeper
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["trongrid-mainnet-proxy"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: trongrid-watchdog
+  namespace: shkeeper-infra
+  labels:
+    app.kubernetes.io/name: trongrid-watchdog
+    app.kubernetes.io/part-of: shkeeper
+subjects:
+  - kind: ServiceAccount
+    name: trongrid-watchdog
+    namespace: shkeeper-infra
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: trongrid-watchdog
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: trongrid-watchdog-egress
+  namespace: shkeeper-infra
+  labels:
+    app.kubernetes.io/name: trongrid-watchdog
+    app.kubernetes.io/part-of: shkeeper
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: trongrid-watchdog
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: trongrid-mainnet-proxy
+      ports:
+        - {protocol: TCP, port: 8080}
+    - to:
+        - ipBlock:
+            cidr: 10.43.0.1/32
+      ports:
+        - {protocol: TCP, port: 443}
+    - to:
+        - ipBlock:
+            cidr: 2.24.106.3/32
+      ports:
+        - {protocol: TCP, port: 6443}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+      ports:
+        - {protocol: TCP, port: 443}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: trongrid-watchdog-to-proxy
+  namespace: shkeeper-infra
+  labels:
+    app.kubernetes.io/name: trongrid-watchdog
+    app.kubernetes.io/part-of: shkeeper
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: trongrid-mainnet-proxy
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: trongrid-watchdog
+      ports:
+        - {protocol: TCP, port: 8080}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: trongrid-watchdog
+  namespace: shkeeper-infra
+  labels:
+    app.kubernetes.io/name: trongrid-watchdog
+    app.kubernetes.io/part-of: shkeeper
+spec:
+  schedule: "*/5 * * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  suspend: false
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 60
+      ttlSecondsAfterFinished: 900
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: trongrid-watchdog
+            app.kubernetes.io/part-of: shkeeper
+        spec:
+          serviceAccountName: trongrid-watchdog
+          automountServiceAccountToken: true
+          enableServiceLinks: false
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 100
+            runAsGroup: 100
+            fsGroup: 100
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: watchdog
+              image: curlimages/curl@sha256:5a91ea0c9c3ee27b4abe657b68cf6bf0676afa13b236b3bda34283cb3924d4f6
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "/opt/vela-watchdog/watchdog.sh"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests: {cpu: 5m, memory: 8Mi}
+                limits: {cpu: 50m, memory: 32Mi}
+              volumeMounts:
+                - {name: script, mountPath: /opt/vela-watchdog, readOnly: true}
+                - {name: runtime, mountPath: /tmp}
+          volumes:
+            - name: script
+              configMap:
+                name: trongrid-watchdog-script
+                defaultMode: 0555
+            - name: runtime
+              emptyDir: {medium: Memory, sizeLimit: 8Mi}
