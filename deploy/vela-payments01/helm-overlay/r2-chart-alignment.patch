@@ -1,0 +1,282 @@
+--- a/charts/shkeeper/templates/shkeeper/service.yaml
++++ b/charts/shkeeper/templates/shkeeper/service.yaml
+@@ -18,7 +18,7 @@
+     app.kubernetes.io/instance: shkeeper-vsys
+     app.kubernetes.io/name: shkeeper
+ 
+-
++{{- if .Values.shkeeper.externalService.enabled }}
+ ---
+ apiVersion: v1
+ kind: Service
+@@ -39,4 +39,5 @@
+   selector:
+     app.kubernetes.io/instance: shkeeper-vsys
+     app.kubernetes.io/name: shkeeper
+-  type: LoadBalancer
+\ No newline at end of file
++  type: LoadBalancer
++{{- end }}
+--- a/charts/shkeeper/values.yaml
++++ b/charts/shkeeper/values.yaml
+@@ -31,6 +31,8 @@
+   image: vsyshost/shkeeper:2.5.30
+   port: 5000
+   enable_payout_callback: false
++  externalService:
++    enabled: true
+ 
+ #
+ # BTC
+--- a/charts/shkeeper/templates/bitcoin-lightning/lnbits/pvc.yaml
++++ b/charts/shkeeper/templates/bitcoin-lightning/lnbits/pvc.yaml
+@@ -1,3 +1,4 @@
++{{- if .Values.btc_lightning.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -9,4 +10,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 1Gi
+\ No newline at end of file
++      storage: 1Gi
++{{- end }}
+--- a/charts/shkeeper/templates/bitcoin-lightning/lnd/pvc.yaml
++++ b/charts/shkeeper/templates/bitcoin-lightning/lnd/pvc.yaml
+@@ -1,3 +1,4 @@
++{{- if .Values.btc_lightning.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -9,4 +10,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 10Gi
+\ No newline at end of file
++      storage: 10Gi
++{{- end }}
+--- a/charts/shkeeper/templates/bitcoin-lightning/rtl/pvc.yaml
++++ b/charts/shkeeper/templates/bitcoin-lightning/rtl/pvc.yaml
+@@ -1,3 +1,4 @@
++{{- if .Values.btc_lightning.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -9,4 +10,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 10Gi
+\ No newline at end of file
++      storage: 10Gi
++{{- end }}
+--- a/charts/shkeeper/templates/bitcoin/bitcoin-shkeeper/pvc.yaml
++++ b/charts/shkeeper/templates/bitcoin/bitcoin-shkeeper/pvc.yaml
+@@ -1,4 +1,5 @@
+ # PVC from original bitcoin core now lives here
++{{- if .Values.btc.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -10,4 +11,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 15Gi
+\ No newline at end of file
++      storage: 15Gi
++{{- end }}
+--- a/charts/shkeeper/templates/dogecoin/dogecoin-shkeeper/pvc.yaml
++++ b/charts/shkeeper/templates/dogecoin/dogecoin-shkeeper/pvc.yaml
+@@ -1,4 +1,5 @@
+ # PVC from original dogecoin core now lives here
++{{- if .Values.doge.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -10,4 +11,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 15Gi
+\ No newline at end of file
++      storage: 15Gi
++{{- end }}
+--- a/charts/shkeeper/templates/litecoin/litecoin-shkeeper/pvc.yaml
++++ b/charts/shkeeper/templates/litecoin/litecoin-shkeeper/pvc.yaml
+@@ -1,4 +1,5 @@
+ # PVC from original litecoin core now lives here
++{{- if .Values.ltc.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -10,4 +11,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 15Gi
+\ No newline at end of file
++      storage: 15Gi
++{{- end }}
+--- a/charts/shkeeper/templates/monero/monero-wallet-rpc/pvc.yaml
++++ b/charts/shkeeper/templates/monero/monero-wallet-rpc/pvc.yaml
+@@ -1,3 +1,4 @@
++{{- if .Values.monero.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -9,4 +10,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 10Gi
+\ No newline at end of file
++      storage: 10Gi
++{{- end }}
+--- a/charts/shkeeper/templates/monero/monerod/pvc.yaml
++++ b/charts/shkeeper/templates/monero/monerod/pvc.yaml
+@@ -1,3 +1,4 @@
++{{- if .Values.monero.fullnode.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -9,4 +10,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 20Gi
+\ No newline at end of file
++      storage: 20Gi
++{{- end }}
+--- a/charts/shkeeper/templates/persistentvolumeclaims/arbitrum-fullnode.yaml
++++ b/charts/shkeeper/templates/persistentvolumeclaims/arbitrum-fullnode.yaml
+@@ -1,3 +1,4 @@
++{{- if .Values.arb_fullnode.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -9,4 +10,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 1000Gi
+\ No newline at end of file
++      storage: 1000Gi
++{{- end }}
+--- a/charts/shkeeper/templates/persistentvolumeclaims/avalanche-fullnode.yaml
++++ b/charts/shkeeper/templates/persistentvolumeclaims/avalanche-fullnode.yaml
+@@ -1,3 +1,4 @@
++{{- if .Values.avalanche_fullnode.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -10,3 +11,4 @@
+   resources:
+     requests:
+       storage: 1000Gi
++{{- end }}
+--- a/charts/shkeeper/templates/persistentvolumeclaims/bnb-fullnode.yaml
++++ b/charts/shkeeper/templates/persistentvolumeclaims/bnb-fullnode.yaml
+@@ -1,3 +1,4 @@
++{{- if .Values.bnb_fullnode.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -9,4 +10,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 3100Gi
+\ No newline at end of file
++      storage: 3100Gi
++{{- end }}
+--- a/charts/shkeeper/templates/persistentvolumeclaims/ethereum-fullnode.yaml
++++ b/charts/shkeeper/templates/persistentvolumeclaims/ethereum-fullnode.yaml
+@@ -1,3 +1,4 @@
++{{- if .Values.eth_fullnode.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -9,4 +10,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 1000Gi
+\ No newline at end of file
++      storage: 1000Gi
++{{- end }}
+--- a/charts/shkeeper/templates/persistentvolumeclaims/firod.yaml
++++ b/charts/shkeeper/templates/persistentvolumeclaims/firod.yaml
+@@ -1,3 +1,4 @@
++{{- if .Values.firo.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -9,4 +10,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 25Gi
+\ No newline at end of file
++      storage: 25Gi
++{{- end }}
+--- a/charts/shkeeper/templates/persistentvolumeclaims/optimism-fullnode.yaml
++++ b/charts/shkeeper/templates/persistentvolumeclaims/optimism-fullnode.yaml
+@@ -1,3 +1,4 @@
++{{- if .Values.optimism_fullnode.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -9,4 +10,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 1000Gi
+\ No newline at end of file
++      storage: 1000Gi
++{{- end }}
+--- a/charts/shkeeper/templates/persistentvolumeclaims/polygon-fullnode.yaml
++++ b/charts/shkeeper/templates/persistentvolumeclaims/polygon-fullnode.yaml
+@@ -1,3 +1,4 @@
++{{- if .Values.polygon_fullnode.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -11,3 +12,4 @@
+     requests:
+       storage: 1000Gi
+ ---
++{{- end }}
+--- a/charts/shkeeper/templates/persistentvolumeclaims/tron-fullnode.yaml
++++ b/charts/shkeeper/templates/persistentvolumeclaims/tron-fullnode.yaml
+@@ -1,3 +1,4 @@
++{{- if .Values.tron_fullnode.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -9,4 +10,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 2000Gi
+\ No newline at end of file
++      storage: 2000Gi
++{{- end }}
+--- a/charts/shkeeper/templates/persistentvolumeclaims/tron-shkeeper.yaml
++++ b/charts/shkeeper/templates/persistentvolumeclaims/tron-shkeeper.yaml
+@@ -1,3 +1,4 @@
++{{- if or .Values.trx.enabled .Values.usdt.enabled .Values.usdc.enabled }}
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+ metadata:
+@@ -22,4 +23,5 @@
+   - ReadWriteOnce
+   resources:
+     requests:
+-      storage: 1Gi
+\ No newline at end of file
++      storage: 1Gi
++{{- end }}

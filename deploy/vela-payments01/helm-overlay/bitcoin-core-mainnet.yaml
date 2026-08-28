@@ -1,0 +1,164 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bitcoin-fullnode
+  namespace: shkeeper
+  labels:
+    app.kubernetes.io/name: bitcoin-fullnode
+    app.kubernetes.io/part-of: shkeeper
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bitcoin-fullnode
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bitcoin-fullnode
+        app.kubernetes.io/part-of: shkeeper
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 300
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bitcoind
+          image: docker.io/vsyshost/bitcoind@sha256:2266ffb1b21d285105d8e2892d18137c4b81c03cf85b5e35728e929e8edb4c83
+          imagePullPolicy: IfNotPresent
+          command: ["/shkeeper/bitcoind"]
+          args:
+            - -datadir=/bitcoin
+            - -server=1
+            - -listen=1
+            - -prune=153600
+            - -txindex=0
+            - -disablewallet=1
+            - -rpcport=8332
+            - -rpcbind=0.0.0.0
+            - -rpcallowip=10.42.0.0/16
+            - -rpcuser=$(BTC_RPC_USERNAME)
+            - -rpcpassword=$(BTC_RPC_PASSWORD)
+            - -printtoconsole=1
+          env:
+            - name: BTC_RPC_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: shkeeper-bitcoin-fullnode
+                  key: username
+            - name: BTC_RPC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: shkeeper-bitcoin-fullnode
+                  key: password
+          ports:
+            - {name: rpc, containerPort: 8332, protocol: TCP}
+            - {name: p2p, containerPort: 8333, protocol: TCP}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: {cpu: 250m, memory: 2Gi}
+            limits: {cpu: "4", memory: 8Gi}
+          startupProbe:
+            tcpSocket: {port: rpc}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 120
+          readinessProbe:
+            tcpSocket: {port: rpc}
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket: {port: rpc}
+            periodSeconds: 30
+            timeoutSeconds: 2
+            failureThreshold: 3
+          volumeMounts:
+            - {name: data, mountPath: /bitcoin}
+            - {name: runtime, mountPath: /tmp}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: bitcoin-fullnode
+        - name: runtime
+          emptyDir: {sizeLimit: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bitcoin-fullnode
+  namespace: shkeeper
+  labels:
+    app.kubernetes.io/name: bitcoin-fullnode
+    app.kubernetes.io/part-of: shkeeper
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: bitcoin-fullnode
+  ports:
+    - {name: rpc, port: 8332, targetPort: rpc, protocol: TCP}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bitcoin-fullnode
+  namespace: shkeeper
+  labels:
+    app.kubernetes.io/name: bitcoin-fullnode
+    app.kubernetes.io/part-of: shkeeper
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 200Gi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bitcoin-fullnode-boundary
+  namespace: shkeeper
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: bitcoin-fullnode
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: bitcoin-shkeeper
+      ports:
+        - {protocol: TCP, port: 8332}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+      ports:
+        - {protocol: TCP, port: 8333}

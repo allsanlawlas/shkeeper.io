@@ -1,0 +1,312 @@
+diff --git a/charts/shkeeper/templates/_helpers.tpl b/charts/shkeeper/templates/_helpers.tpl
+index 5da460f..4ea7f99 100644
+--- a/charts/shkeeper/templates/_helpers.tpl
++++ b/charts/shkeeper/templates/_helpers.tpl
+@@ -1,12 +1,16 @@
+ {{- define "shkeeper.waitForDb" -}}
+ - name: wait-for-db
+   image: {{ .Values.waitForDb.image }}
++  securityContext:
++    allowPrivilegeEscalation: false
+   command: ['sh', '-c', 'until nc -z mariadb 3306; do echo "Waiting for MariaDB..."; sleep 2; done']
+ {{- end }}
+ 
+ {{- define "shkeeper.createDb" -}}
+ - name: create-db
+   image: {{ .Values.createDb.image }}
++  securityContext:
++    allowPrivilegeEscalation: false
+   env:
+   - name: MYSQL_PWD
+     valueFrom:
+@@ -15,3 +19,10 @@
+         key: password
+   command: ['sh', '-c', 'mysql -h mariadb -u root -e "CREATE DATABASE IF NOT EXISTS \`{{ .dbName }}\`"']
+ {{- end }}
++
++{{- define "shkeeper.podSecurity" -}}
++automountServiceAccountToken: false
++securityContext:
++  seccompProfile:
++    type: RuntimeDefault
++{{- end }}
+diff --git a/charts/shkeeper/templates/bitcoin/bitcoin-shkeeper/deploy.yaml b/charts/shkeeper/templates/bitcoin/bitcoin-shkeeper/deploy.yaml
+index 062767c..d177637 100644
+--- a/charts/shkeeper/templates/bitcoin/bitcoin-shkeeper/deploy.yaml
++++ b/charts/shkeeper/templates/bitcoin/bitcoin-shkeeper/deploy.yaml
+@@ -19,6 +19,7 @@ spec:
+       labels:
+         app: bitcoin-shkeeper
+     spec:
++      {{- include "shkeeper.podSecurity" . | nindent 6 }}
+       {{- with .Values.dev.imagePullSecrets }}
+       imagePullSecrets:
+         {{- toYaml . | nindent 8 }}
+@@ -28,6 +29,8 @@ spec:
+       {{- include "shkeeper.createDb" (dict "dbName" "bitcoin-shkeeper" "Values" .Values) | nindent 8 }}
+         - name: db-init-tables
+           image: {{ .Values.unified_btc_image }}
++          securityContext:
++            allowPrivilegeEscalation: false
+           command: ["python", "manage.py", "init_db"]
+           env:
+             - name: WALLET
+@@ -50,6 +53,8 @@ spec:
+       containers:
+         - name: app
+           image: {{ .Values.unified_btc_image }}
++          securityContext:
++            allowPrivilegeEscalation: false
+           command:
+           - gunicorn
+           - --access-logfile=-
+@@ -106,6 +111,8 @@ spec:
+               mountPath: /root/.bitcoin
+         - name: tasks
+           image: {{ .Values.unified_btc_image }}
++          securityContext:
++            allowPrivilegeEscalation: false
+           command: ["celery", "-A", "celery_worker.celery", "worker", "--loglevel=info", "-B"]
+           env:
+             - name: WALLET
+@@ -151,9 +158,11 @@ spec:
+             - name: bitcoind-storage
+               mountPath: /root/.bitcoin
+         - name: redis
+-          image: redis
++          image: {{ .Values.redis.image }}
++          securityContext:
++            allowPrivilegeEscalation: false
+       volumes:
+       - name: bitcoind-storage
+         persistentVolumeClaim:
+           claimName: bitcoind-claim
+-{{- end }}
+\ No newline at end of file
++{{- end }}
+diff --git a/charts/shkeeper/templates/deployments/ethereum-shkeeper.yaml b/charts/shkeeper/templates/deployments/ethereum-shkeeper.yaml
+index f5f922a..4fbc909 100644
+--- a/charts/shkeeper/templates/deployments/ethereum-shkeeper.yaml
++++ b/charts/shkeeper/templates/deployments/ethereum-shkeeper.yaml
+@@ -19,6 +19,7 @@ spec:
+       labels:
+         app: ethereum-shkeeper
+     spec:
++      {{- include "shkeeper.podSecurity" . | nindent 6 }}
+       {{- with .Values.dev.imagePullSecrets }}
+       imagePullSecrets:
+         {{- toYaml . | nindent 8 }}
+@@ -30,6 +31,8 @@ spec:
+ 
+       - name: app
+         image: {{ .Values.unified_evm_image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+         command:
+         - gunicorn
+         - --access-logfile=-
+@@ -81,6 +84,8 @@ spec:
+ 
+       - name: tasks
+         image: {{ .Values.unified_evm_image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+         command: ["celery", "-A", "celery_worker.celery", "worker", "--loglevel=info", "-B"]
+         env:
+           - name: ETH_USERNAME
+@@ -123,5 +128,7 @@ spec:
+             value: "ETH"
+ 
+       - name: redis
+-        image: redis
++        image: {{ .Values.redis.image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+ {{- end }}
+diff --git a/charts/shkeeper/templates/deployments/polygon-shkeeper.yaml b/charts/shkeeper/templates/deployments/polygon-shkeeper.yaml
+index 6a8cbcb..8212ad9 100644
+--- a/charts/shkeeper/templates/deployments/polygon-shkeeper.yaml
++++ b/charts/shkeeper/templates/deployments/polygon-shkeeper.yaml
+@@ -19,6 +19,7 @@ spec:
+       labels:
+         app: polygon-shkeeper
+     spec:
++      {{- include "shkeeper.podSecurity" . | nindent 6 }}
+       {{- with .Values.dev.imagePullSecrets }}
+       imagePullSecrets:
+         {{- toYaml . | nindent 8 }}
+@@ -30,6 +31,8 @@ spec:
+ 
+       - name: app
+         image: {{ .Values.unified_evm_image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+         command:
+         - gunicorn
+         - --access-logfile=-
+@@ -77,6 +80,8 @@ spec:
+ 
+       - name: tasks
+         image: {{ .Values.unified_evm_image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+         command: ["celery", "-A", "celery_worker.celery", "worker", "--loglevel=info", "-B"]
+         env:
+           - name: POLYGON_USERNAME
+@@ -115,5 +120,7 @@ spec:
+             value: "POLYGON"
+ 
+       - name: redis
+-        image: redis
++        image: {{ .Values.redis.image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+ {{- end }}
+diff --git a/charts/shkeeper/templates/deployments/solana-shkeeper.yaml b/charts/shkeeper/templates/deployments/solana-shkeeper.yaml
+index a594c1c..d640153 100644
+--- a/charts/shkeeper/templates/deployments/solana-shkeeper.yaml
++++ b/charts/shkeeper/templates/deployments/solana-shkeeper.yaml
+@@ -19,6 +19,7 @@ spec:
+       labels:
+         app: solana-shkeeper
+     spec:
++      {{- include "shkeeper.podSecurity" . | nindent 6 }}
+       {{- with .Values.dev.imagePullSecrets }}
+       imagePullSecrets:
+         {{- toYaml . | nindent 8 }}
+@@ -30,6 +31,8 @@ spec:
+ 
+       - name: app
+         image: {{ .Values.solana_shkeeper.image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+         command:
+         - gunicorn
+         - --access-logfile=-
+@@ -79,6 +82,8 @@ spec:
+ 
+       - name: tasks
+         image: {{ .Values.solana_shkeeper.image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+         command: ["celery", "-A", "celery_worker.celery", "worker", "--loglevel=info", "-B"]
+         env:
+           - name: SOL_USERNAME
+@@ -119,5 +124,7 @@ spec:
+           {{- end }}
+ 
+       - name: redis
+-        image: redis
++        image: {{ .Values.redis.image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+ {{- end }}
+diff --git a/charts/shkeeper/templates/deployments/tron-shkeeper.yaml b/charts/shkeeper/templates/deployments/tron-shkeeper.yaml
+index 9d05134..3856dcb 100644
+--- a/charts/shkeeper/templates/deployments/tron-shkeeper.yaml
++++ b/charts/shkeeper/templates/deployments/tron-shkeeper.yaml
+@@ -20,6 +20,7 @@ spec:
+         app: tron-shkeeper
+         vela.healthcare/egress-role: trongrid-client
+     spec:
++      {{- include "shkeeper.podSecurity" . | nindent 6 }}
+       {{- with .Values.dev.imagePullSecrets }}
+       imagePullSecrets:
+         {{- toYaml . | nindent 8 }}
+@@ -29,6 +30,8 @@ spec:
+       {{- include "shkeeper.createDb" (dict "dbName" "tron-shkeeper" "Values" .Values) | nindent 6 }}
+       - name: migrate-db
+         image: {{ .Values.tron_shkeeper.image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+         command: ["python", "scripts/init_db.py"]
+         volumeMounts:
+         - name: data
+@@ -80,6 +83,8 @@ spec:
+ 
+       - name: app
+         image: {{ .Values.tron_shkeeper.image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+         command:
+         - gunicorn
+         - --access-logfile=-
+@@ -137,6 +142,8 @@ spec:
+ 
+       - name: tasks
+         image: {{ .Values.tron_shkeeper.image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+         command: ["celery", "-A", "celery_worker.celery", "worker", "--loglevel=info", "-B", "--schedule=/app/data/celerybeat-schedule"]
+         volumeMounts:
+         - name: data
+@@ -185,7 +192,9 @@ spec:
+             {{- end }}
+ 
+       - name: redis
+-        image: redis:7
++        image: {{ .Values.redis.image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+         command: ["redis-server", "--loglevel", "warning",  "--bind",  "0.0.0.0", "--protected-mode", "no", "--appendonly", "yes", "--shutdown-on-sigint", "save", "--shutdown-on-sigterm", "save"]
+         volumeMounts:
+         - name: redis-data
+diff --git a/charts/shkeeper/templates/mariadb/deploy.yaml b/charts/shkeeper/templates/mariadb/deploy.yaml
+index dcec660..da809ec 100644
+--- a/charts/shkeeper/templates/mariadb/deploy.yaml
++++ b/charts/shkeeper/templates/mariadb/deploy.yaml
+@@ -17,10 +17,13 @@ spec:
+       labels:
+         app: mariadb
+     spec:
++      {{- include "shkeeper.podSecurity" . | nindent 6 }}
+       hostname: mariadb
+       containers:
+       - name: mariadb
+-        image: mariadb:10.9.3
++        image: {{ .Values.createDb.image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+         env:
+           - name: MARIADB_ROOT_PASSWORD
+             valueFrom:
+diff --git a/charts/shkeeper/templates/namespaces/shkeeper.yaml b/charts/shkeeper/templates/namespaces/shkeeper.yaml
+index 59f7944..5288652 100644
+--- a/charts/shkeeper/templates/namespaces/shkeeper.yaml
++++ b/charts/shkeeper/templates/namespaces/shkeeper.yaml
+@@ -1,4 +1,11 @@
+ apiVersion: v1
+ kind: Namespace
+ metadata:
+-  name: {{ .Values.namespace }}
+\ No newline at end of file
++  name: {{ .Values.namespace }}
++  labels:
++    pod-security.kubernetes.io/enforce: baseline
++    pod-security.kubernetes.io/enforce-version: v1.36
++    pod-security.kubernetes.io/audit: restricted
++    pod-security.kubernetes.io/audit-version: v1.36
++    pod-security.kubernetes.io/warn: restricted
++    pod-security.kubernetes.io/warn-version: v1.36
+diff --git a/charts/shkeeper/templates/shkeeper/deploy.yaml b/charts/shkeeper/templates/shkeeper/deploy.yaml
+index d0d2a28..b29d0e1 100644
+--- a/charts/shkeeper/templates/shkeeper/deploy.yaml
++++ b/charts/shkeeper/templates/shkeeper/deploy.yaml
+@@ -21,6 +21,8 @@ spec:
+         app.kubernetes.io/name: shkeeper
+     spec:
+ 
++      {{- include "shkeeper.podSecurity" . | nindent 6 }}
++
+       {{- with .Values.dev.imagePullSecrets }}
+       imagePullSecrets:
+         {{- toYaml . | nindent 8 }}
+@@ -33,6 +35,8 @@ spec:
+       containers:
+       - name: shkeeper
+         image: {{ .Values.shkeeper.image }}
++        securityContext:
++          allowPrivilegeEscalation: false
+         ports:
+         - containerPort: 5000
+         env:

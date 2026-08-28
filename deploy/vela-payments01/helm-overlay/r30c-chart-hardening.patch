@@ -1,0 +1,57 @@
+diff --git a/templates/_helpers.tpl b/templates/_helpers.tpl
+index 6eea139..5da460f 100644
+--- a/templates/_helpers.tpl
++++ b/templates/_helpers.tpl
+@@ -9,6 +9,9 @@
+   image: {{ .Values.createDb.image }}
+   env:
+   - name: MYSQL_PWD
+-    value: {{ .Values.mariadb.rootPassword }}
++    valueFrom:
++      secretKeyRef:
++        name: shkeeper-mariadb-root
++        key: password
+   command: ['sh', '-c', 'mysql -h mariadb -u root -e "CREATE DATABASE IF NOT EXISTS \`{{ .dbName }}\`"']
+ {{- end }}
+diff --git a/templates/deployments/tron-shkeeper.yaml b/templates/deployments/tron-shkeeper.yaml
+index ec5fd12..9d05134 100644
+--- a/templates/deployments/tron-shkeeper.yaml
++++ b/templates/deployments/tron-shkeeper.yaml
+@@ -18,6 +18,7 @@ spec:
+     metadata:
+       labels:
+         app: tron-shkeeper
++        vela.healthcare/egress-role: trongrid-client
+     spec:
+       {{- with .Values.dev.imagePullSecrets }}
+       imagePullSecrets:
+diff --git a/templates/mariadb/deploy.yaml b/templates/mariadb/deploy.yaml
+index 958222e..dcec660 100644
+--- a/templates/mariadb/deploy.yaml
++++ b/templates/mariadb/deploy.yaml
+@@ -23,7 +23,10 @@ spec:
+         image: mariadb:10.9.3
+         env:
+           - name: MARIADB_ROOT_PASSWORD
+-            value: shkeeper
++            valueFrom:
++              secretKeyRef:
++                name: shkeeper-mariadb-root
++                key: password
+         volumeMounts:
+         - name: mariadb
+           mountPath: /var/lib/mysql
+diff --git a/values.yaml b/values.yaml
+index c18788a..2659b16 100644
+--- a/values.yaml
++++ b/values.yaml
+@@ -13,8 +13,7 @@ waitForDb:
+ createDb:
+   image: mariadb:10.9.3
+ 
+-mariadb:
+-  rootPassword: shkeeper
++mariadb: {}
+ 
+ dev:
+   imagePullSecrets:

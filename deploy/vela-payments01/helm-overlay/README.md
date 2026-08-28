@@ -1,17 +1,37 @@
-# vela-payments01 TronGrid proxy overlay
+# vela-payments01 deployment overlay
 
-This directory contains the secret-free, reproducible TronGrid mainnet proxy overlay for `vela-payments01`.
+This directory is the secret-free deployment contract for `vela-payments01`.
 
-Frozen inputs:
+## Supported payment assets
 
-- Application source: `allsanlawlas/shkeeper.io@d639e065aa53ad71dc0a5a586f0c4cb0fef5d1e7`
-- Upstream chart: `vsys-host/helm-charts@2fb730bb4167d82a68f78eaf1207001cc0a901f5`
-- Proxy image: `nginx@sha256:8a4f4b94275ff59d809477799cbbaf1a7ab65ed1871403d05e31fd66bdb8db82`
+Customer-facing assets are exactly BTC, ETH USDC, ETH USDT, Polygon USDC,
+Polygon USDT, Solana USDC, Solana USDT, and Tron USDT. Native ETH, POL, SOL,
+and TRX remain disabled as customer wallets and are retained only as gas in
+the corresponding adapter-controlled wallets.
 
-No provider key, wallet key, database password, rendered Secret, kubeconfig, or other credential belongs in this directory.
+## Normal configuration model
 
-`trongrid-mainnet-proxy.yaml` is the hardened two-replica ClusterIP proxy and its NetworkPolicies. The Secret is created separately through an interactive, non-logged server transaction.
+1. Change `values-vela-payments01.yaml` for chart-supported configuration.
+2. Reapply the chart patches in this exact order: `r27`, `r30c`, `r32`, `r39`,
+   then `r2-chart-alignment`, against the chart at `UPSTREAM_CHART_COMMIT`.
+3. Run Helm lint and render checks.
+4. Review `helm diff` against the live release.
+5. Use `helm upgrade --install` only after the separate deployment gate.
 
-The watchdog contract is frozen here, but its CronJob/RBAC installation remains deferred until the proxy failure-behaviour test passes. It may restart only `deployment/trongrid-mainnet-proxy`; it must never restart Shkeeper.
+An application image rebuild is required only for application-source changes.
+dRPC endpoint rotation and other credentials require a Kubernetes Secret
+update, encrypted backup, and a controlled restart of the affected adapter;
+they never belong in values, Git, a command argument, or evidence.
 
-RPC endpoint and supported-chain changes remain configuration changes through the deployment `values.yaml` followed by `helm upgrade`; they do not require rebuilding the Shkeeper image unless application source code changes.
+## Boundaries
+
+- `shkeeper-external` is disabled; initial ingress is prohibited.
+- Disabled full-node, disabled-chain, Lightning, and Monero PVC templates are
+  conditionally suppressed; the accepted request is exactly 237 GiB.
+- Chart-generated Secret objects are disabled.
+- `shkeeper-networkpolicies.yaml` supplies the namespace-wide base policies.
+- `trongrid-mainnet-proxy.yaml` remains authoritative for the deferred
+  `tron-adapter-egress` policy and the already-installed proxy boundary.
+- `bitcoin-core-mainnet.yaml` is maintained separately from the Helm release.
+- The accepted TronGrid watchdog is maintained separately and may restart only
+  `trongrid-mainnet-proxy` under its frozen failure/cooldown contract.
