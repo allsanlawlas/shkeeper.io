@@ -1,0 +1,298 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shkeeper-infra
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    vela.healthcare/network-boundary: shkeeper-infra
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trongrid-mainnet-proxy-config
+  namespace: shkeeper-infra
+  labels:
+    app.kubernetes.io/name: trongrid-mainnet-proxy
+    app.kubernetes.io/part-of: shkeeper
+data:
+  nginx.conf.template: |
+    pid /tmp/nginx.pid;
+    worker_processes 1;
+    error_log stderr warn;
+    events { worker_connections 128; }
+    http {
+      access_log off;
+      server_tokens off;
+      merge_slashes off;
+      client_body_temp_path /tmp/client_body;
+      proxy_temp_path /tmp/proxy_temp;
+      fastcgi_temp_path /tmp/fastcgi_temp;
+      uwsgi_temp_path /tmp/uwsgi_temp;
+      scgi_temp_path /tmp/scgi_temp;
+      client_max_body_size 1m;
+      map_hash_bucket_size 128;
+      map "$request_method:$request_uri" $vela_upstream_path {
+        default "";
+        "GET:/wallet/getnodeinfo" /wallet/getnodeinfo;
+        "POST:/wallet/getnodeinfo" /wallet/getnodeinfo;
+        "POST:/wallet/getblockbynum" /wallet/getblockbynum;
+        "POST:/wallet/gettransactioninfobyblocknum" /wallet/gettransactioninfobyblocknum;
+        "POST:/wallet/getcontract" /wallet/getcontract;
+        "POST:/wallet/triggerconstantcontract" /wallet/triggerconstantcontract;
+        "POST:/wallet/getaccount" /wallet/getaccount;
+        "POST:/wallet/getaccountresource" /wallet/getaccountresource;
+        "POST:/wallet/getcandelegatedmaxsize" /wallet/getcandelegatedmaxsize;
+        "POST:/wallet/getdelegatedresourceaccountindexv2" /wallet/getdelegatedresourceaccountindexv2;
+        "POST:/wallet/getdelegatedresourcev2" /wallet/getdelegatedresourcev2;
+        "POST:/wallet/estimateenergy" /wallet/estimateenergy;
+        "POST:/wallet/gettransactionbyid" /wallet/gettransactionbyid;
+        "POST:/wallet/gettransactioninfobyid" /wallet/gettransactioninfobyid;
+        "POST:/wallet/getsignweight" /wallet/getsignweight;
+        "POST:/wallet/broadcasttransaction" /wallet/broadcasttransaction;
+      }
+      server {
+        listen 8080;
+        location = /livez_local_only {
+          if ($request_method != GET) { return 405; }
+          return 204;
+        }
+        location = /readyz_local_only {
+          if ($request_method != GET) { return 405; }
+          return 204;
+        }
+        location / {
+          if ($vela_upstream_path = "") { return 404; }
+          resolver 10.43.0.10 valid=5s ipv6=off;
+          proxy_pass https://api.trongrid.io$vela_upstream_path;
+          proxy_ssl_server_name on;
+          proxy_ssl_name api.trongrid.io;
+          proxy_ssl_verify on;
+          proxy_ssl_verify_depth 3;
+          proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+          proxy_set_header Host api.trongrid.io;
+          proxy_set_header Authorization "";
+          proxy_set_header TRON-PRO-API-KEY "${TRONGRID_API_KEY}";
+          proxy_set_header User-Agent "vela-payments01-trongrid-proxy/1";
+          proxy_set_header Connection "";
+          proxy_set_header Content-Type "application/json";
+          proxy_connect_timeout 2s;
+          proxy_send_timeout 5s;
+          proxy_read_timeout 5s;
+          proxy_next_upstream off;
+          proxy_cache off;
+          proxy_buffering off;
+          proxy_intercept_errors off;
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trongrid-mainnet-proxy
+  namespace: shkeeper-infra
+  labels:
+    app.kubernetes.io/name: trongrid-mainnet-proxy
+    app.kubernetes.io/part-of: shkeeper
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trongrid-mainnet-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trongrid-mainnet-proxy
+        app.kubernetes.io/part-of: shkeeper
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 15
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: render-config
+          image: nginx@sha256:8a4f4b94275ff59d809477799cbbaf1a7ab65ed1871403d05e31fd66bdb8db82
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ceu"]
+          args:
+            - >-
+              umask 077;
+              envsubst '${TRONGRID_API_KEY}' < /template/nginx.conf.template > /generated/nginx.conf;
+              test -s /generated/nginx.conf;
+              nginx -t -c /generated/nginx.conf
+          env:
+            - name: TRONGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: trongrid-api
+                  key: TRONGRID_API_KEY
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          volumeMounts:
+            - {name: template, mountPath: /template, readOnly: true}
+            - {name: generated, mountPath: /generated}
+            - {name: runtime, mountPath: /tmp}
+      containers:
+        - name: proxy
+          image: nginx@sha256:8a4f4b94275ff59d809477799cbbaf1a7ab65ed1871403d05e31fd66bdb8db82
+          imagePullPolicy: IfNotPresent
+          command: ["nginx"]
+          args: ["-c", "/generated/nginx.conf", "-g", "daemon off;"]
+          ports:
+            - {name: http, containerPort: 8080, protocol: TCP}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          livenessProbe:
+            httpGet: {path: /livez_local_only, port: http}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /readyz_local_only, port: http}
+            initialDelaySeconds: 1
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 3
+          volumeMounts:
+            - {name: generated, mountPath: /generated, readOnly: true}
+            - {name: runtime, mountPath: /tmp}
+      volumes:
+        - name: template
+          configMap:
+            name: trongrid-mainnet-proxy-config
+        - name: generated
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}
+        - name: runtime
+          emptyDir: {medium: Memory, sizeLimit: 16Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trongrid-mainnet-proxy
+  namespace: shkeeper-infra
+  labels:
+    app.kubernetes.io/name: trongrid-mainnet-proxy
+    app.kubernetes.io/part-of: shkeeper
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: trongrid-mainnet-proxy
+  ports:
+    - {name: http, port: 8080, targetPort: http, protocol: TCP}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: shkeeper-infra
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: trongrid-mainnet-proxy-boundary
+  namespace: shkeeper-infra
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: trongrid-mainnet-proxy
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: shkeeper
+          podSelector:
+            matchLabels:
+              vela.healthcare/egress-role: trongrid-client
+      ports:
+        - {protocol: TCP, port: 8080}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+      ports:
+        - {protocol: TCP, port: 443}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tron-adapter-egress
+  namespace: shkeeper
+spec:
+  podSelector:
+    matchLabels:
+      vela.healthcare/egress-role: trongrid-client
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - podSelector: {}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: shkeeper-infra
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: trongrid-mainnet-proxy
+      ports:
+        - {protocol: TCP, port: 8080}
